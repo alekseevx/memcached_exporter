@@ -53,8 +53,14 @@ func main() {
 	level.Info(logger).Log("msg", "Starting memcached_exporter", "version", version.Info())
 	level.Info(logger).Log("msg", "Build context", "context", version.BuildContext())
 
+	statsCollector, err := exporter.New(*address, *timeout, logger)
+	if err != nil {
+		level.Error(logger).Log("msg", "Failed to create exporter", "err", err)
+		os.Exit(1)
+	}
+
 	prometheus.MustRegister(version.NewCollector("memcached_exporter"))
-	prometheus.MustRegister(exporter.New(*address, *timeout, logger))
+	prometheus.MustRegister(statsCollector)
 
 	if *pidFile != "" {
 		procExporter := prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{

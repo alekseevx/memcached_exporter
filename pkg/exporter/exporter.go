@@ -36,6 +36,7 @@ var errKeyNotFound = errors.New("key not found")
 // Exporter collects metrics from a memcached server.
 type Exporter struct {
 	address string
+	client  *memcache.Client
 	timeout time.Duration
 	logger  log.Logger
 
@@ -105,9 +106,15 @@ type Exporter struct {
 }
 
 // New returns an initialized exporter.
-func New(server string, timeout time.Duration, logger log.Logger) *Exporter {
+func New(server string, timeout time.Duration, logger log.Logger) (*Exporter, error) {
+	client, err := memcache.New(server)
+	if err != nil {
+		return nil, err
+	}
+	client.Timeout = timeout
 	return &Exporter{
 		address: server,
+		client:  client,
 		timeout: timeout,
 		logger:  logger,
 		up: prometheus.NewDesc(
@@ -488,7 +495,7 @@ func New(server string, timeout time.Duration, logger log.Logger) *Exporter {
 			[]string{"slab", "command", "status"},
 			nil,
 		),
-	}
+	}, nil
 }
 
 // Describe describes all the metrics exported by the memcached exporter. It
@@ -563,21 +570,13 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 // Collect fetches the statistics from the configured memcached server, and
 // delivers them as Prometheus metrics. It implements prometheus.Collector.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
-	c, err := memcache.New(e.address)
-	if err != nil {
-		ch <- prometheus.MustNewConstMetric(e.up, prometheus.GaugeValue, 0)
-		level.Error(e.logger).Log("msg", "Failed to connect to memcached", "err", err)
-		return
-	}
-	c.Timeout = e.timeout
-
 	up := float64(1)
-	stats, err := c.Stats()
+	stats, err := e.client.Stats()
 	if err != nil {
 		level.Error(e.logger).Log("msg", "Failed to collect stats from memcached", "err", err)
 		up = 0
 	}
-	statsSettings, err := c.StatsSettings()
+	statsSettings, err := e.client.StatsSettings()
 	if err != nil {
 		level.Error(e.logger).Log("msg", "Could not query stats settings", "err", err)
 		up = 0
